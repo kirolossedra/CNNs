@@ -1,0 +1,166 @@
+%load('allData.mat');
+
+
+%data = allData;
+
+
+%{ 
+
+% Loop through each row
+for i = 1:size(data, 1)
+    currentRow = data(i, :); % Access the i-th row
+
+    % Access the first column
+firstColumn = data(:, 1);
+
+% Access the second column
+secondColumn = data(:, 2);
+
+% Access the third column
+thirdColumn = data(:, 3);
+
+
+
+
+   labels = data(:, 4);
+    
+end
+
+
+% Concatenate the first, second, and third columns vertically
+combinedColumns = [firstColumn; secondColumn; thirdColumn];
+
+% Create the second column with the fourth column repeated three times
+repeatedFourthColumn = [labels; labels; labels];
+
+% Create a new variable with the two columns
+LstmData = [combinedColumns, repeatedFourthColumn];
+
+
+save('LstmData.mat', 'LstmData', '-v7.3');
+
+
+%}
+%load('LstmData.mat');
+load('allData.mat');
+%{
+
+idxs = splitlabels(LstmData(:,2),[0.7 0.15],"randomized");
+trainIdx = idxs{1}; valIdx = idxs{2}; testIdx = idxs{3};
+
+trainData = LstmData(trainIdx(randperm(length(trainIdx))),:);
+valData = LstmData(valIdx(randperm(length(valIdx))),:);
+trainDataDs = arrayDatastore(trainData,"OutputType","same");
+valDataDs = arrayDatastore(valData,"OutputType","same");
+
+
+% Define LSTM Network
+inputSize = [90, 189, 1];
+numClasses = 12;
+numHiddenUnits = 100;
+filterSize = 5;
+numFilters = 20;
+
+mainBranch = [
+       sequenceInputLayer(inputSize)
+     
+    batchNormalizationLayer
+    reluLayer
+    lstmLayer(numHiddenUnits,OutputMode="last")
+    fullyConnectedLayer(numClasses)
+    softmaxLayer
+    ];
+
+
+
+misoCNN = dlnetwork();
+
+misoCNN = addLayers(misoCNN, mainBranch);
+plot(misoCNN);
+
+options = trainingOptions("adam", ...
+    "InitialLearnRate",5e-4, ...
+    "MaxEpochs",3,... 
+    "MiniBatchSize",32, ...
+    "ValidationData",valDataDs, ...
+    "ValidationFrequency",40, ...
+    "Verbose",false, ...
+    "Plots","training-progress", ...
+    "Metrics","accuracy");
+
+
+ misoNet = trainnet(trainDataDs,misoCNN,"crossentropy",options); 
+%}
+
+idxs = splitlabels(allData(:,4),[0.7 0.15],"randomized");
+trainIdx = idxs{1}; valIdx = idxs{2}; testIdx = idxs{3};
+trainData = allData(trainIdx(randperm(length(trainIdx))),:);
+valData = allData(valIdx(randperm(length(valIdx))),:);
+trainDataDs = arrayDatastore(trainData,"OutputType","same");
+valDataDs = arrayDatastore(valData,"OutputType","same");
+
+
+
+repeatBranch = [
+    imageInputLayer([90 189 1],"Normalization", "none")
+
+    convolution2dLayer(3,8,"Padding",1)
+    batchNormalizationLayer
+    reluLayer   
+    maxPooling2dLayer(2,"Stride",2)
+
+    convolution2dLayer(3,16,"Padding",1)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer(2,"Stride",2)
+
+    convolution2dLayer(3,32,"Padding",1)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer(2,"Stride",2)
+
+    convolution2dLayer(3,64,"Padding",1)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer(2,"Stride",2)];
+
+mainBranch = [
+    additionLayer(3)
+
+      % Flatten the output before passing it to LSTM
+    flattenLayer
+    
+    % LSTM Layer
+    lstmLayer(100,'OutputMode','last')
+    fullyConnectedLayer(12)
+    softmaxLayer
+    ];
+
+misoCNN = dlnetwork();
+
+misoCNN = addLayers(misoCNN, repeatBranch);
+misoCNN = addLayers(misoCNN, repeatBranch);
+misoCNN = addLayers(misoCNN, repeatBranch);
+misoCNN = addLayers(misoCNN, mainBranch);
+misoCNN = connectLayers(misoCNN, "maxpool_4", "addition/in1");
+misoCNN = connectLayers(misoCNN, "maxpool_8", "addition/in2");
+misoCNN = connectLayers(misoCNN, "maxpool_12", "addition/in3");
+options = trainingOptions("adam", ...
+    "InitialLearnRate",5e-4, ...
+    "MaxEpochs",3,... 
+    "MiniBatchSize",32, ...
+    "ValidationData",valDataDs, ...
+    "ValidationFrequency",40, ...
+    "Verbose",false, ...
+    "Plots","training-progress", ...
+    "Metrics","accuracy");
+
+
+plot(misoCNN);
+analyzeNetwork(misoCNN)
+
+
+misoNet = trainnet(trainDataDs,misoCNN,"crossentropy",options);
+
+
+%## this one works and has accuracy 97.22
